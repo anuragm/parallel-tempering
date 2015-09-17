@@ -18,11 +18,12 @@
 #include <random>
 #include <chrono>
 #include <cmath>
+#include <memory>
 
 namespace pt{
 
     //Global variables
-    const double dw_temperature=1.383;
+    const double dw_temperature=0.10991;
     const arma::uword dw_numberOfQubits=512;
 
     const auto time_seed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -80,6 +81,7 @@ namespace pt{
         double beta = 1/dw_temperature;
 
     public:
+        SimulatedAnnealing() {};
         SimulatedAnnealing(const Hamiltonian<numOfQubits>& in_ham):
             ham(in_ham) {} ;
         SimulatedAnnealing(const Hamiltonian<numOfQubits>& in_ham,
@@ -104,6 +106,35 @@ namespace pt{
         double get_energy() const;
         void anneal();
     }; //end class Simulated Annealing
+
+    template<arma::uword num_of_instances=64,arma::uword num_of_qubit=dw_numberOfQubits>
+    class ParallelTempering{
+    private:
+        std::vector<std::unique_ptr<SimulatedAnnealing<num_of_qubit> > > instances;
+        Hamiltonian<num_of_qubit> ham;
+        arma::vec beta = arma::vec(num_of_instances,arma::fill::zeros);
+        arma::uword num_of_SA_anneal;
+        arma::uword num_of_swaps;
+        double base_beta = 1/dw_temperature;
+        double final_beta = 100.0;
+        void common_init();
+    public:
+        ParallelTempering(const Hamiltonian<num_of_qubit>&);
+        ParallelTempering(const Hamiltonian<num_of_qubit>&, const BitString<num_of_qubit>&);
+        ParallelTempering(const Hamiltonian<num_of_qubit>&, const BitString<num_of_qubit>&,
+                          const arma::vec&);
+        ParallelTempering(const Hamiltonian<num_of_qubit>&, double, double);
+        ~ParallelTempering();
+
+        void set_num_of_SA_anneal(arma::uword num_anneal){ num_of_SA_anneal = num_anneal;}
+        arma::uword get_num_of_SA_anneal() const{ return num_of_SA_anneal;}
+
+        void set_num_of_swaps(arma::uword num_swaps){ num_of_swaps = num_swaps;}
+        arma::uword get_num_of_swaps() const{ return num_of_swaps;}
+
+
+
+    };//end class Parallel tempering;
 
 } //end namespace pt.
 
@@ -231,7 +262,17 @@ void pt::Hamiltonian<numOfQubits>::computeQUBO(){
                 Q(ii,jj) = 4*J(ii,jj);
 }
 
-/// Defining a overloaded operator for multiplying arma::mat to BitString.
+/**
+ *  \brief Overloaded multiplication operator for multiplying arma::mat for BitString
+ *
+ *  A overloaded template operator is provided to easily multiply a matrix with BitString. This
+ *  is done so that the calculation for energy of a particular state with the given Hamiltonian
+ *  appears in a more natural form.
+ *
+ *  \param in_mat : The matrix to be multiplied
+ *  \param in_state: The state on which the Matrix is operated on
+ *  \return A column vector of result of the multiplication.
+ */
 template <arma::uword numOfQubits, class T>
 const arma::Mat<T> operator*
 (const arma::Mat<T>& in_mat,const pt::BitString<numOfQubits>& in_state){
@@ -249,6 +290,74 @@ const arma::Mat<T> operator*
 
     result = arma::sum(in_mat.cols(non_zero_elements),1);
     return result;
+}
+
+template<arma::uword num_of_instances,arma::uword num_of_qubit>
+pt::ParallelTempering<num_of_instances,num_of_qubit>
+::ParallelTempering(const pt::Hamiltonian<num_of_qubit>& in_ham):ham(in_ham){
+    common_init();
+}
+
+template<arma::uword num_of_instances,arma::uword num_of_qubit>
+pt::ParallelTempering<num_of_instances,num_of_qubit>
+::ParallelTempering(const pt::Hamiltonian<num_of_qubit>& in_ham,
+                    double in_base_beta, double in_final_beta):
+    base_beta(in_base_beta),final_beta(in_final_beta),ParallelTempering(in_ham){}
+
+template<arma::uword num_of_instances,arma::uword num_of_qubit>
+pt::ParallelTempering<num_of_instances,num_of_qubit>
+::ParallelTempering
+(const Hamiltonian<num_of_qubit>& in_ham, const BitString<num_of_qubit>& in_state):
+    ham(in_ham){
+    common_init();
+    //Set each state to the input state.
+    for (auto &ii: instances)
+        ii->set_state(in_state);
+}
+
+template<arma::uword num_of_instances,arma::uword num_of_qubit>
+pt::ParallelTempering<num_of_instances,num_of_qubit>
+::ParallelTempering
+(const Hamiltonian<num_of_qubit>& in_ham, const BitString<num_of_qubit>& in_state,
+ const arma::vec& in_temperature):
+    ham(in_ham),beta(1.0/in_temperature){
+    common_init();
+    //Set each state to the input state.
+    for (auto &ii: instances)
+        ii->set_state(in_state);
+}
+
+template<arma::uword num_of_instances,arma::uword num_of_qubit>
+pt::ParallelTempering<num_of_instances,num_of_qubit>
+::~ParallelTempering(){
+    //Release all the unique pointer.
+    for(auto &ii: instances)
+        ii.reset();
+}
+
+
+template<arma::uword num_of_instances,arma::uword num_of_qubit>
+void pt::ParallelTempering<num_of_instances,num_of_qubit>::common_init(){
+    //create instances and proper space
+    instances
+        = std::vector<std::unique_ptr<SimulatedAnnealing<num_of_qubit> > >(num_of_instances);
+
+    //Assign the same Hamiltonian to all SA instances.
+    for (auto& ii: instances)
+        ii.reset(new pt::SimulatedAnnealing<num_of_qubit>(ham));
+
+    //If no temperature was allocated, set it in geometric progression.
+    if( !arma::any(beta)){
+        double beta_ratio = std::pow(final_beta/base_beta,1/(num_of_instances-1));
+        beta(0) = base_beta;
+        beta(num_of_instances-1) = final_beta;
+        for(int ii=1;ii<(num_of_instances-2);ii++)
+            beta(ii) = base_beta*std::pow(beta_ratio,ii);
+    }
+
+    //Set this as temperature of each SA object
+    for(int ii=0;ii<num_of_instances;ii++)
+        instances[ii]->set_beta(beta(ii));
 }
 
 #endif //bitstring.hpp
