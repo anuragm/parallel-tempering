@@ -5,7 +5,7 @@ IFLAGS=-I$(SRCDIR)/
 CPP_FILES := $(wildcard $(SRCDIR)/*.cpp)
 OBJ_FILES := $(addprefix $(OBJDIR)/,$(notdir $(CPP_FILES:.cpp=.o)))
 LD_FLAGS :=
-CC_FLAGS :=-std=c++14 -Wall -pedantic
+CC_FLAGS :=-std=c++11 -Wall -pedantic -O3
 
 all: pt doc
 

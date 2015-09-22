@@ -11,53 +11,49 @@
 #include <armadillo>
 #include <climits>
 #include "pt.hpp"
-#include <tclap/CmdLine.h>
-
-void get_params(int,char**,std::string&,arma::uword&,arma::uword&,arma::uword&);
+#include "ptparse.hpp"
 
 int main(int argc, char** argv){
 
-    arma::uword num_sa_anneals, num_pt_swaps,num_of_qubit;
+    arma::uword num_sa_anneals, num_pt_swaps,num_of_qubit; int offset;
     std::string file_name;
 
-    get_params(argc,argv,file_name,num_sa_anneals,num_pt_swaps,num_of_qubit);
+    cmdParams cmd_params;
+    get_cmd_params(&cmd_params,argc,argv);
+    num_sa_anneals = cmd_params.num_of_sa_runs;
+    num_pt_swaps   = cmd_params.num_of_swaps;
+    offset         = cmd_params.qubit_offset;
+    file_name      = cmd_params.fileName;
+    num_of_qubit   = cmd_params.num_of_qubits;
+
     std::cout << "Number of SA anneals is "<<num_sa_anneals<<std::endl;
-    std::cout << "Number of pt swaps is "<<num_pt_swaps<<std::endl;
-    std::cout << "Number of qubits is "<<num_of_qubit<<std::endl;
-    std::cout << "File to read from is "<<file_name<<std::endl;
+    std::cout << "Number of pt swaps is "  <<num_pt_swaps  <<std::endl;
+    std::cout << "Number of qubits is "    <<num_of_qubit  <<std::endl;
+    std::cout << "File to read from is "   <<file_name     <<std::endl;
+    std::cout << "Offset is "<<offset<<std::endl;
 
-    std::printf("Starting Parallel tempering\n");
-    pt::Hamiltonian temp_ham(file_name,num_of_qubit);
-    std::cout << "Constructed Hamiltonian \n";
-    pt::ParallelTempering temp_pt(temp_ham);
-    std::printf("Constructed object. Program complete \n");
+    pt::Hamiltonian temp_ham(file_name,num_of_qubit,offset);
+    //pt::SimulatedAnnealing temp_SA(temp_ham);
+    //temp_SA.anneal();
+    pt::ParallelTempering temp_pt(temp_ham,pt::DW_BETA,pt::DW_BETA/10,64);
+
+    temp_pt.set_num_of_SA_anneal(num_sa_anneals);
+    temp_pt.set_num_of_swaps(num_pt_swaps);
+
+    std::cout << "Now performing parallel tempering\n";
+    arma::wall_clock timer;
+    
+    double swap_time=0, anneal_time=0;
+    for(arma::uword ii=0;ii<num_pt_swaps;ii++){
+        timer.tic(); temp_pt.perform_anneal(); anneal_time += timer.toc();
+        timer.tic(); temp_pt.perform_swap();   swap_time += timer.toc();
+    }
+
+    std::cout << "After PT, energy of base beta instances is "
+              <<temp_pt.get_energies().at(0)<<std::endl;
+    std::cout << "And the minimum energy found at any beta is "
+              <<arma::min(temp_pt.get_energies())<<std::endl;
+    std::cout<< "SA anneal time was "<<anneal_time<<" and swap time was "<<swap_time
+             <<" seconds \n";
     return 0;
-}
-
-void get_params(int num_of_args,char** args, std::string& file, arma::uword& num_sa_anneals,
-                arma::uword& num_pt_swaps,arma::uword& num_of_qubit){
-    try{
-
-        TCLAP::CmdLine cmd("Parallel tempering on Chimera graph", ' ', "0.1");
-        TCLAP::ValueArg<unsigned int> sa_runs("s","saruns","Number of SA Runs",false,10,"int");
-        TCLAP::ValueArg<unsigned int> num_swaps("n","numswaps","Number of swaps",false,100,
-                                                "int");
-        TCLAP::ValueArg<unsigned int> num_qubit("q","numqubit","Number of qubits",false,512,
-                                                "int");
-        TCLAP::UnlabeledValueArg<std::string> ham_file("hamfile","File to anneal",true,"",
-                                                       "valid file path");
-
-        cmd.add(sa_runs); cmd.add(num_swaps); cmd.add(ham_file);
-        cmd.add(num_qubit);
-        cmd.parse(num_of_args,args);
-
-        file           = ham_file.getValue();
-        num_sa_anneals = sa_runs.getValue();
-        num_pt_swaps   = num_swaps.getValue();
-        num_of_qubit   = num_qubit.getValue();
-    }
-    catch (TCLAP::ArgException& e)
-    {
-        TCLAP::CmdLine cmd("Command description message", ' ', "0.9");
-    }
 }
