@@ -27,3 +27,10 @@ doc_clean:
 
 clean:
 	rm -f pt && rm -f $(OBJDIR)/*.o
+
+lib/test.o: test/test.cpp
+	g++ $(CC_FLAGS) $(IFLAGS) -c -o lib/test.o test/test.cpp
+
+
+test: lib/pt.o lib/test.o
+	g++ $(LD_FLAGS) -o pt_test lib/test.o lib/pt.o
