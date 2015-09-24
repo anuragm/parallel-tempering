@@ -42,7 +42,7 @@ int main(int argc, char** argv){
 
     std::cout << "Now performing parallel tempering\n";
     arma::wall_clock timer;
-    
+
     double swap_time=0, anneal_time=0;
     for(arma::uword ii=0;ii<num_pt_swaps;ii++){
         timer.tic(); temp_pt.perform_anneal(); anneal_time += timer.toc();
