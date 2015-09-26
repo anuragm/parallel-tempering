@@ -11,7 +11,7 @@
 #include <armadillo>
 #include <boost/dynamic_bitset.hpp>
 #include <cmath>
-#include "../src/pt.hpp"
+#include "pt.hpp"
 
 bool is_equal_double(double a,double b){
     return (std::abs(a-b)<1e-8);

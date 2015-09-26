@@ -6,6 +6,9 @@
  *  be performed. I will use the tclap header library to parse the inputs. 
  *
  */
+
+#ifndef PTPARSE_HPP
+#define PTPARSE_HPP 1
 #include <tclap/CmdLine.h>
 
 struct cmdParams{
@@ -44,3 +47,5 @@ void get_cmd_params(cmdParams* cmd_params,int num_of_args,char** args){
         TCLAP::CmdLine cmd("Command description message", ' ', "0.9");
     }
 }
+
+#endif

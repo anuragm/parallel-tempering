@@ -751,7 +751,7 @@ WARN_LOGFILE           =
 # spaces.
 # Note: If this tag is empty the current directory is searched.
 
-INPUT                  = ./src
+INPUT                  = ./src ./include
 
 # This tag can be used to specify the character encoding of the source files
 # that doxygen parses. Internally doxygen uses the UTF-8 encoding. Doxygen uses
@@ -2329,4 +2329,3 @@ GENERATE_LEGEND        = YES
 # This tag requires that the tag HAVE_DOT is set to YES.
 
 DOT_CLEANUP            = YES
-</pre></body></html>Ztext/plainUUTF-8P            (   7   I   _   }   î   ‘ è® è≥ èπ                          è∫

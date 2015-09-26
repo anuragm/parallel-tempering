@@ -1,5 +1,5 @@
 /**
- *   \file bitstring.hpp
+ *   \file pt.hpp
  *   \brief Interface for the various classes used in the parallel
  *   tempering algorithm.
  *
@@ -19,7 +19,9 @@
 #include <boost/dynamic_bitset.hpp>
 
 namespace pt{
-
+    
+    typedef unsigned long defaultBlock;
+    typedef boost::dynamic_bitset<defaultBlock> boost_bitset;
     //Global variables
     const double DW_TEMPERATURE=0.10991;
     const double DW_BETA = 1/DW_TEMPERATURE;
@@ -28,6 +30,8 @@ namespace pt{
     const auto time_seed = std::chrono::system_clock::now().time_since_epoch().count();
     extern std::mt19937 rand_eng;
     extern std::uniform_real_distribution<double> uniform_dist;
+
+    std::vector<defaultBlock> boost_bitset_to_vector(const boost_bitset&);
 
     class Hamiltonian{
     private:
@@ -49,9 +53,9 @@ namespace pt{
         const arma::uvec& get_ngbrs(int qubit_number) const{
             return neighbours[qubit_number];
         };
-        double flip_energy_diff(int, const boost::dynamic_bitset<>&);
-        double energy_diff(boost::dynamic_bitset<>, const boost::dynamic_bitset<>&);
-        double get_energy(const boost::dynamic_bitset<>&) const;
+        double flip_energy_diff(int, const boost_bitset&);
+        double energy_diff(boost_bitset, const boost_bitset&);
+        double get_energy(const boost_bitset&) const;
 
         Hamiltonian(arma::uword nQubits):
             num_of_qubits(nQubits){
@@ -76,7 +80,7 @@ namespace pt{
     class ParallelTempering{
     private:
         arma::uword num_of_instances=64;
-        std::vector<std::unique_ptr<boost::dynamic_bitset<>>> instances;
+        std::vector<std::unique_ptr<boost_bitset>> instances;
         Hamiltonian ham;
         arma::vec beta;
         arma::uword num_of_SA_anneal;
@@ -85,6 +89,9 @@ namespace pt{
         double final_beta = DW_BETA/10;
         std::uniform_int_distribution<int> rand_qubit;
         void common_init();
+        bool flag_save = false;
+        std::string save_file="";
+        arma::mat save_energies;
     public:
         ParallelTempering(const Hamiltonian&);
         ParallelTempering(const Hamiltonian&, arma::uword);
@@ -94,6 +101,11 @@ namespace pt{
 
         void set_num_of_SA_anneal(arma::uword num_anneal) {
             num_of_SA_anneal = num_anneal;
+        }
+
+        void set_save_file(const std::string& file_name){
+            flag_save = true;
+            save_file = file_name;
         }
 
         arma::uword get_num_of_SA_anneal() const {
@@ -115,6 +127,7 @@ namespace pt{
         void perform_swap();
         void run();
         arma::vec get_energies() const;
+        void write_data() const;
     };//end class Parallel tempering;
 } //end namespace pt.
 
