@@ -6,8 +6,11 @@ IFLAGS := -I$(INCDIR)/
 CPP_FILES := $(wildcard $(SRCDIR)/*.cpp)
 HPP_FILES := $(INCDIR)/*.hpp
 
-LD_FLAGS :=
-CC_FLAGS :=-std=c++14 -Wall -pedantic -O3
+LD_FLAGS := -lboost_iostreams-mt -lz
+ifeq (macos,macos)
+LD_FLAGS := -framework Accelerate $(LD_FLAGS)
+endif
+CC_FLAGS :=-std=c++14 -Wall -pedantic -O3 -march=native
 
 all: pt doc
 
@@ -16,12 +19,12 @@ debug: LD_FLAGS += -g
 debug: pt
 
 pt : lib/main.o lib/pt.o
-	g++ $(LD_FLAGS) -o $@ $^
+	g++ -o $@ $^ $(LD_FLAGS)
 
 lib/%.o : src/%.cpp $(HPP_FILES)
 	g++ $(CC_FLAGS) $(IFLAGS) -c -o $@ $<
 
-doc: .Doxyfile $(CPP_FILES) $(HPP_FILES) 
+doc: .Doxyfile $(CPP_FILES) $(HPP_FILES)
 	doxygen $^
 
 doc_clean:

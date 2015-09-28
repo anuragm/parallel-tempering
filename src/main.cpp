@@ -30,15 +30,14 @@ int main(int argc, char** argv){
     std::cout << "Number of pt swaps is "  <<num_pt_swaps  <<std::endl;
     std::cout << "Number of qubits is "    <<num_of_qubit  <<std::endl;
     std::cout << "File to read from is "   <<file_name     <<std::endl;
-    std::cout << "Offset is "<<offset<<std::endl;
+    std::cout << "Offset is "              <<offset        <<std::endl;
 
     pt::Hamiltonian temp_ham(file_name,num_of_qubit,offset);
-    //pt::SimulatedAnnealing temp_SA(temp_ham);
-    //temp_SA.anneal();
-    pt::ParallelTempering temp_pt(temp_ham,pt::DW_BETA,pt::DW_BETA/10,64);
+    pt::ParallelTempering temp_pt(temp_ham);
 
     temp_pt.set_num_of_SA_anneal(num_sa_anneals);
     temp_pt.set_num_of_swaps(num_pt_swaps);
+    //temp_pt.set_save_flag(true);
 
     std::cout << "Now performing parallel tempering\n";
     arma::wall_clock timer;
@@ -55,5 +54,10 @@ int main(int argc, char** argv){
               <<arma::min(temp_pt.get_energies())<<std::endl;
     std::cout<< "SA anneal time was "<<anneal_time<<" and swap time was "<<swap_time
              <<" seconds \n";
+    timer.tic();
+    std::cout << "Now saving file\n";
+    temp_pt.write_to_file(file_name+".state");
+    std::cout << "It took "<<timer.toc()<<" seconds to write data to disk.\n";
+
     return 0;
 }

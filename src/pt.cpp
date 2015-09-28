@@ -11,12 +11,33 @@
 #include <boost/dynamic_bitset.hpp>
 #include <cmath>
 #include <memory>
+#include <climits>
+#include <boost/iostreams/device/file.hpp> //include to read-write files.
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+
 
 //Redefine global constants.
 namespace pt{
     std::mt19937 rand_eng(time_seed);
     std::uniform_real_distribution<double> uniform_dist =
         std::uniform_real_distribution<double>(0.0,1.0);
+}
+
+std::vector<pt::defaultBlock> pt::boost_bitset_to_vector(const pt::boost_bitset& state){
+    std::vector<pt::defaultBlock> conv_vector
+        (state.size()/sizeof(pt::defaultBlock)/CHAR_BIT);
+    boost::to_block_range(state, conv_vector.begin());
+    return conv_vector;
+}
+
+
+void make_random_bitset(pt::boost_bitset& bitset){
+    auto num_of_bits = bitset.size();
+    std::vector<pt::defaultBlock> temp_vec(num_of_bits/CHAR_BIT/sizeof(pt::defaultBlock));
+    auto dice = std::bind(std::uniform_int_distribution<pt::defaultBlock>(),pt::rand_eng);
+    std::generate_n(temp_vec.begin(),temp_vec.size(),dice);
+    boost::from_block_range(temp_vec.begin(), temp_vec.end(), bitset);
 }
 
 /**
@@ -78,7 +99,7 @@ void pt::Hamiltonian::read_file(const std::string& fileName, int offset){
  *  \return double precision energy
  */
 
-double pt::Hamiltonian::get_energy(const boost::dynamic_bitset<>& bit_state) const{
+double pt::Hamiltonian::get_energy(const boost_bitset& bit_state) const{
     //Remember, state is bitstring, and not a array of 0 and 1.
     typedef std::string::size_type size_type;
     double energy = 0;
@@ -108,7 +129,7 @@ double pt::Hamiltonian::get_energy(const boost::dynamic_bitset<>& bit_state) con
  *  flip. \f$ \Delta E = E_f - E_i \f$.
  */
 double pt::Hamiltonian::flip_energy_diff(int qubit_number,
-                                         const boost::dynamic_bitset<>& bitstring){
+                                         const boost_bitset& bitstring){
     //Energy diff is sum all Q(ii,jj) s.t. jj is 1.
     double diff_energy = 0;
     const arma::uvec& current_ngbrs = get_ngbrs(qubit_number);
@@ -167,7 +188,7 @@ void pt::Hamiltonian::pre_compute(){
  *  \return the difference in energy \f$ E_a - E_b \f$
  */
 double pt::Hamiltonian::energy_diff
-(boost::dynamic_bitset<> a, const boost::dynamic_bitset<>& b){
+(boost_bitset a, const boost_bitset& b){
     typedef std::string::size_type size_type;
     auto diff_bitset(a ^ b); //Bitwise XOR
     double energy_diff = 0;
@@ -178,7 +199,6 @@ double pt::Hamiltonian::energy_diff
             a.flip(ii);
         }
     }
-
     return energy_diff;
 }
 
@@ -186,26 +206,19 @@ double pt::Hamiltonian::energy_diff
 pt::ParallelTempering::ParallelTempering
 (const pt::Hamiltonian& in_ham,arma::uword in_num_of_instances):
     num_of_instances(in_num_of_instances),ham(in_ham){
-    beta =  arma::vec(num_of_instances,arma::fill::zeros);
-    common_init();
-}
 
-pt::ParallelTempering::ParallelTempering(const Hamiltonian& in_ham):
-    ParallelTempering(in_ham,64){}
+    //Set up various default values.
+    beta             = arma::vec(num_of_instances,arma::fill::zeros);
+    base_beta        = DW_BETA;
+    final_beta       = DW_BETA/10;
+    num_of_SA_anneal = 10;
+    num_of_swaps     = 100;
+    anneal_counter   = 0;
+    flag_save        = false;
+    flag_init        = false;
 
-pt::ParallelTempering::ParallelTempering(const pt::Hamiltonian& in_ham,
-                                         double in_base_beta, double in_final_beta,
-                                         arma::uword in_num_of_instances):
-    num_of_instances(in_num_of_instances),ham(in_ham),base_beta(in_base_beta),
-    final_beta(in_final_beta){
-    beta  = arma::vec(num_of_instances,arma::fill::zeros);
-    common_init();
-}
-
-pt::ParallelTempering::ParallelTempering
-(const Hamiltonian& in_ham, const arma::vec& in_temperature):
-    ham(in_ham),beta(1.0/in_temperature){
-    common_init();
+    //Memory to be initialised just before first anneal is performed. This is done by calling
+    //init function.
 }
 
 pt::ParallelTempering::~ParallelTempering(){
@@ -214,14 +227,18 @@ pt::ParallelTempering::~ParallelTempering(){
         ii.reset();
 }
 
-void pt::ParallelTempering::common_init(){
-    //create instances and proper space
-    instances = std::vector<std::unique_ptr<boost::dynamic_bitset<>>>(num_of_instances);
-    for (auto& ii: instances)
-        ii.reset(new boost::dynamic_bitset<>(ham.size()));
+void pt::ParallelTempering::init(){
 
-    //Allocate the random number generator
+    //create instances and proper space, and then initialise them to random bit strings.
+    instances = std::vector<std::unique_ptr<boost_bitset>>(num_of_instances);
+    for (auto& ii: instances){
+        ii  = std::make_unique<boost_bitset>(ham.size());
+        make_random_bitset(*ii);
+    }
+
+    //Initialise the random qubit distribution.
     rand_qubit = std::uniform_int_distribution<int>(0,ham.size()-1);
+
     //If no temperature was allocated, set it in geometric progression.
     arma::vec log_beta(num_of_instances);
     if( !arma::any(beta)){
@@ -231,7 +248,24 @@ void pt::ParallelTempering::common_init(){
         }
     }
     beta = arma::exp(log_beta);
+
+    //Set aside space to save energies, and store the initial energies.
+    energies.set_size(num_of_instances,num_of_SA_anneal*num_of_swaps+1);
+    energies.col(anneal_counter) = get_energies();
+
+    //Set aside space to save states, if required.
+    if(flag_save)
+        //Allocate memory to save states if they need to be written to file.
+        states.set_size(num_of_instances,num_of_SA_anneal*num_of_swaps,
+                        ham.size()/CHAR_BIT/sizeof(defaultBlock));
+    else
+        states.reset();
+
+    //And now set the init flag to true.
+    flag_init = true;
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  *  \brief Perform Simulated annealing on all the instances
@@ -244,16 +278,29 @@ void pt::ParallelTempering::common_init(){
  */
 
 void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
+    if(!flag_init){
+        init();
+    }
+
     //For all instances, to anneal_steps number of SA steps.
     for(arma::uword ii_anneal=0;ii_anneal<anneal_steps;ii_anneal++){
+        arma::Col<double> current_energies = energies.col(anneal_counter);
         for(arma::uword ii_instance=0;ii_instance<num_of_instances;ii_instance++){
             auto& state = instances[ii_instance];
             int qubit_to_flip = rand_qubit(rand_eng);
             double energy_diff = ham.flip_energy_diff(qubit_to_flip,*state);
             double prob_to_flip = std::exp(-beta(ii_instance)*energy_diff);
-            if(prob_to_flip > uniform_dist(rand_eng))
+            if(prob_to_flip > uniform_dist(rand_eng)){
+                current_energies(ii_instance) += energy_diff;
                 state->flip(qubit_to_flip);
+            }
+            if(flag_save){
+                states.tube(ii_instance,anneal_counter) =
+                    arma::Col<defaultBlock>(pt::boost_bitset_to_vector(*state));
+            }
         }
+        anneal_counter++;
+        energies.col(anneal_counter) = current_energies;
     }
 }
 
@@ -274,7 +321,7 @@ void pt::ParallelTempering::perform_swap(){
         beta1 = beta(ii);
         beta2 = beta(ii+1);
         double energy_diff = ham.energy_diff(*instances[ii+1],*instances[ii]);
- 
+
         double swap_prob = std::exp(-(beta2-beta1)*energy_diff);
         bool should_swap = (rand_num()<swap_prob);
 
@@ -292,4 +339,19 @@ arma::vec pt::ParallelTempering::get_energies() const{
         energies(ii) = ham.get_energy(*instances[ii]);
 
     return energies;
+}
+
+void pt::ParallelTempering::write_to_file(std::string file_name){
+    namespace io=boost::iostreams;
+    if(!flag_save)
+        return;
+
+    std::ofstream file_obj(file_name,std::ios::binary);
+    io::filtering_ostream filter;
+    filter.push(io::zlib_compressor(6));
+    filter.push(file_obj);
+
+    const defaultBlock* data_memptr = states.memptr();
+    filter.write(reinterpret_cast<const char*>(data_memptr),
+                 states.n_elem*sizeof(defaultBlock));
 }

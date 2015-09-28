@@ -19,7 +19,7 @@
 #include <boost/dynamic_bitset.hpp>
 
 namespace pt{
-    
+
     typedef unsigned long defaultBlock;
     typedef boost::dynamic_bitset<defaultBlock> boost_bitset;
     //Global variables
@@ -79,33 +79,40 @@ namespace pt{
 
     class ParallelTempering{
     private:
-        arma::uword num_of_instances=64;
-        std::vector<std::unique_ptr<boost_bitset>> instances;
+        arma::uword num_of_instances;
         Hamiltonian ham;
         arma::vec beta;
         arma::uword num_of_SA_anneal;
         arma::uword num_of_swaps;
-        double base_beta = DW_BETA;
-        double final_beta = DW_BETA/10;
+        double base_beta;
+        double final_beta;
+        arma::uword anneal_counter;
         std::uniform_int_distribution<int> rand_qubit;
-        void common_init();
-        bool flag_save = false;
-        std::string save_file="";
-        arma::mat save_energies;
+
+        bool flag_save;
+        bool flag_init;
+
+        std::vector<std::unique_ptr<boost_bitset>> instances;
+        arma::Cube<defaultBlock> states;
+        arma::Mat<double> energies;
+
+        void init();
+
     public:
-        ParallelTempering(const Hamiltonian&);
-        ParallelTempering(const Hamiltonian&, arma::uword);
-        ParallelTempering(const Hamiltonian&, const arma::vec&);
-        ParallelTempering(const Hamiltonian&, double, double,arma::uword);
+        ParallelTempering() = delete;
+        ParallelTempering(const Hamiltonian& in_ham, arma::uword in_instances=64);
         ~ParallelTempering();
 
         void set_num_of_SA_anneal(arma::uword num_anneal) {
             num_of_SA_anneal = num_anneal;
         }
 
-        void set_save_file(const std::string& file_name){
-            flag_save = true;
-            save_file = file_name;
+        void set_save_flag(bool flag){
+            flag_save = flag;
+        }
+
+        bool get_save_flag(){
+            return flag_save;
         }
 
         arma::uword get_num_of_SA_anneal() const {
@@ -126,8 +133,8 @@ namespace pt{
         void perform_anneal(arma::uword anneal_steps);
         void perform_swap();
         void run();
+        void write_to_file(std::string file_name);
         arma::vec get_energies() const;
-        void write_data() const;
     };//end class Parallel tempering;
 } //end namespace pt.
 
