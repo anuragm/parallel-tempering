@@ -56,6 +56,7 @@ namespace pt{
         double flip_energy_diff(int, const boost_bitset&);
         double energy_diff(boost_bitset, const boost_bitset&);
         double get_energy(const boost_bitset&) const;
+        void scale_to_unit();
 
         Hamiltonian(arma::uword nQubits):
             num_of_qubits(nQubits){
@@ -133,7 +134,8 @@ namespace pt{
         void perform_anneal(arma::uword anneal_steps);
         void perform_swap();
         void run();
-        void write_to_file(std::string file_name);
+        void write_to_file_states(std::string file_name);
+        void write_to_file_energies(std::string file_name);
         arma::vec get_energies() const;
     };//end class Parallel tempering;
 } //end namespace pt.

@@ -6,11 +6,14 @@ IFLAGS := -I$(INCDIR)/
 CPP_FILES := $(wildcard $(SRCDIR)/*.cpp)
 HPP_FILES := $(INCDIR)/*.hpp
 
-LD_FLAGS := -lboost_iostreams-mt -lz
+LD_FLAGS := -lboost_iostreams -lz -flto
+
 ifeq (macos,macos)
 LD_FLAGS := -framework Accelerate $(LD_FLAGS)
 endif
-CC_FLAGS :=-std=c++14 -Wall -pedantic -O3 -march=native
+
+#O3 flag uses string aliasing for code. We want a warning if that happens.
+CC_FLAGS :=-std=c++14 -Wall -pedantic -O3 -march=native -Wstrict-aliasing -flto
 
 all: pt doc
 

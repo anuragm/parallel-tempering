@@ -15,6 +15,10 @@
 
 int main(int argc, char** argv){
 
+    std::cout << "Double precision on this machine is "<<
+        std::numeric_limits<double>::epsilon()<<std::endl;
+    std::cout << "Long Double precision on this machine is "<<
+        std::numeric_limits<long double>::epsilon()<<std::endl;
     arma::uword num_sa_anneals, num_pt_swaps,num_of_qubit; int offset;
     std::string file_name;
 
@@ -33,8 +37,8 @@ int main(int argc, char** argv){
     std::cout << "Offset is "              <<offset        <<std::endl;
 
     pt::Hamiltonian temp_ham(file_name,num_of_qubit,offset);
-    pt::ParallelTempering temp_pt(temp_ham);
 
+    pt::ParallelTempering temp_pt(temp_ham);
     temp_pt.set_num_of_SA_anneal(num_sa_anneals);
     temp_pt.set_num_of_swaps(num_pt_swaps);
     //temp_pt.set_save_flag(true);
@@ -56,7 +60,8 @@ int main(int argc, char** argv){
              <<" seconds \n";
     timer.tic();
     std::cout << "Now saving file\n";
-    temp_pt.write_to_file(file_name+".state");
+    temp_pt.write_to_file_states(file_name+".state");
+    temp_pt.write_to_file_energies(file_name+".energies");
     std::cout << "It took "<<timer.toc()<<" seconds to write data to disk.\n";
 
     return 0;
