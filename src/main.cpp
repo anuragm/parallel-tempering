@@ -19,6 +19,8 @@ int main(int argc, char** argv){
         std::numeric_limits<double>::epsilon()<<std::endl;
     std::cout << "Long Double precision on this machine is "<<
         std::numeric_limits<long double>::epsilon()<<std::endl;
+    std::cout << "Log of Max value of double precision is "
+              <<std::log(std::numeric_limits<double>::max())<<std::endl;
     arma::uword num_sa_anneals, num_pt_swaps,num_of_qubit; int offset;
     std::string file_name;
 
@@ -41,7 +43,6 @@ int main(int argc, char** argv){
     pt::ParallelTempering temp_pt(temp_ham);
     temp_pt.set_num_of_SA_anneal(num_sa_anneals);
     temp_pt.set_num_of_swaps(num_pt_swaps);
-    //temp_pt.set_save_flag(true);
 
     std::cout << "Now performing parallel tempering\n";
     arma::wall_clock timer;
@@ -53,16 +54,13 @@ int main(int argc, char** argv){
     }
 
     std::cout << "After PT, energy of base beta instances is "
-              <<temp_pt.get_energies().at(0)<<std::endl;
+              <<temp_pt.get_energies(pt::INSTANCES_1).at(0)<<std::endl;
+    arma::uword min_energy_loc;
     std::cout << "And the minimum energy found at any beta is "
-              <<arma::min(temp_pt.get_energies())<<std::endl;
+              <<temp_pt.get_energies(pt::INSTANCES_2).min(min_energy_loc)
+              <<" for beta "<<temp_pt.get_beta().at(min_energy_loc)<<std::endl;
     std::cout<< "SA anneal time was "<<anneal_time<<" and swap time was "<<swap_time
              <<" seconds \n";
-    timer.tic();
-    std::cout << "Now saving file\n";
-    temp_pt.write_to_file_states(file_name+".state");
-    temp_pt.write_to_file_energies(file_name+".energies");
-    std::cout << "It took "<<timer.toc()<<" seconds to write data to disk.\n";
 
     return 0;
 }

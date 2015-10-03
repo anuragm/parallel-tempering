@@ -238,14 +238,13 @@ pt::ParallelTempering::ParallelTempering
     num_of_instances(in_num_of_instances),ham(in_ham){
 
     //Set up various default values.
-    beta             = arma::vec(num_of_instances,arma::fill::zeros);
-    base_beta        = DW_BETA;
-    final_beta       = DW_BETA/10;
-    num_of_SA_anneal = 10;
-    num_of_swaps     = 100;
-    anneal_counter   = 0;
-    flag_save        = false;
-    flag_init        = false;
+    beta               = arma::vec(num_of_instances,arma::fill::zeros);
+    base_beta          = DW_BETA;
+    final_beta         = DW_BETA/10;
+    num_of_SA_anneal   = 10;
+    num_of_swaps       = 100;
+    anneal_counter     = 0;
+    flag_init          = false;
 
     //Memory to be initialised just before first anneal is performed. This is done by calling
     //init function.
@@ -254,8 +253,10 @@ pt::ParallelTempering::ParallelTempering
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 pt::ParallelTempering::~ParallelTempering(){
-    //Release all the unique pointer.
-    for(auto &ii: instances)
+    //Release all the unique pointers.
+    for(auto &ii: instances1)
+        ii.reset();
+    for(auto &ii: instances2)
         ii.reset();
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -263,11 +264,20 @@ pt::ParallelTempering::~ParallelTempering(){
 void pt::ParallelTempering::init(){
 
     //create instances and proper space, and then initialise them to random bit strings.
-    instances = std::vector<std::unique_ptr<boost_bitset>>(num_of_instances);
-    for (auto& ii: instances){
+    instances1 = std::vector<std::unique_ptr<boost_bitset>>(num_of_instances);
+    instances2 = std::vector<std::unique_ptr<boost_bitset>>(num_of_instances);
+    for (auto& ii: instances1){
         ii  = std::make_unique<boost_bitset>(ham.size());
         make_random_bitset(*ii);
     }
+    for (auto& ii: instances2){
+        ii  = std::make_unique<boost_bitset>(ham.size());
+        make_random_bitset(*ii);
+    }
+
+    //Initialise energies for these states.
+    energies1 = get_energies(INSTANCES_1);
+    energies2 = get_energies(INSTANCES_2);
 
     //Initialise the random qubit distribution.
     rand_qubit = std::uniform_int_distribution<int>(0,ham.size()-1);
@@ -281,18 +291,6 @@ void pt::ParallelTempering::init(){
         }
     }
     beta = arma::exp(log_beta);
-
-    //Set aside space to save energies, and store the initial energies.
-    energies.set_size(num_of_instances,num_of_SA_anneal*num_of_swaps+1);
-    energies.col(anneal_counter) = get_energies();
-
-    //Set aside space to save states, if required.
-    if(flag_save)
-        //Allocate memory to save states if they need to be written to file.
-        states.set_size(num_of_instances,num_of_SA_anneal*num_of_swaps,
-                        ham.size()/CHAR_BIT/sizeof(defaultBlock));
-    else
-        states.reset();
 
     //And now set the init flag to true.
     flag_init = true;
@@ -315,25 +313,31 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
         init();
     }
 
-    //For all instances, to anneal_steps number of SA steps.
-    for(arma::uword ii_anneal=0;ii_anneal<anneal_steps;ii_anneal++){
-        arma::Col<double> current_energies = energies.col(anneal_counter);
-        for(arma::uword ii_instance=0;ii_instance<num_of_instances;ii_instance++){
-            auto& state = instances[ii_instance];
+    //Lambda to perform anneal on a state.
+    auto anneal_state = [&] (std::unique_ptr<boost_bitset>& state, double& state_energy,
+                                             arma::uword ii){
             int qubit_to_flip = rand_qubit(rand_eng);
             double energy_diff = ham.flip_energy_diff(qubit_to_flip,*state);
-            double prob_to_flip = std::exp(-beta(ii_instance)*energy_diff);
+            double prob_to_flip = std::exp(-beta(ii)*energy_diff);
             if (prob_to_flip > uniform_dist(rand_eng)){
-                current_energies(ii_instance) += energy_diff;
                 state->flip(qubit_to_flip);
+                state_energy += energy_diff;
             }
-            if(flag_save){
-                states.tube(ii_instance,anneal_counter) =
-                    arma::Col<defaultBlock>(pt::boost_bitset_to_vector(*state));
-            }
+        };
+
+    //For all instances, to anneal_steps number of SA steps.
+    for(arma::uword ii_anneal=0;ii_anneal<anneal_steps;ii_anneal++){
+        //      if(flag_save_energies)
+        //   current_energies = energies.col(anneal_counter);
+        for(arma::uword ii_instance=0;ii_instance<num_of_instances;ii_instance++){
+            //Anneal both copies.
+            anneal_state(instances1[ii_instance],energies1(ii_instance),ii_instance);
+            anneal_state(instances2[ii_instance],energies1(ii_instance),ii_instance);
         }
         anneal_counter++;
-        energies.col(anneal_counter) = current_energies;
+        //TODO: Add procedure to write new states and energies to disk
+        //TODO: Add procedure to apply random functionals to the two states.
+        //TODO: Write sample functionals to compute overlap and save energies.
     }
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -349,22 +353,23 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
  */
 
 void pt::ParallelTempering::perform_swap(){
-    double beta1, beta2;
+    double beta_diff;
     auto rand_num = std::bind(uniform_dist,rand_eng);
+    auto swapStates = [&] (std::vector<std::unique_ptr<boost_bitset>>& ins,
+                           arma::vec& energies, double b_diff, arma::uword ins_number){
+        double energy_diff = ham.energy_diff(*ins[ins_number+1],*ins[ins_number]);
+        double swap_prob = std::exp(-b_diff*energy_diff);
+        bool should_swap = (rand_num()<swap_prob);
+        if(should_swap){ //Swap instances ii and ii+1 in instances.
+            std::swap(ins[ins_number+1],ins[ins_number]); //Cheap, because only pointers change.
+            std::swap(energies(ins_number+1),energies(ins_number));
+        }
+    };
 
     for(arma::uword ii=0; ii<(num_of_instances-1);ii++){
-        beta1 = beta(ii);
-        beta2 = beta(ii+1);
-        double energy_diff = ham.energy_diff(*instances[ii+1],*instances[ii]);
-
-        double swap_prob = std::exp(-(beta2-beta1)*energy_diff);
-        bool should_swap = (rand_num()<swap_prob);
-
-        if(should_swap){ //Swap instances ii and ii+1 in instances.
-            std::swap(instances[ii],instances[ii+1]); //Cheap, because only pointers change.
-            beta(ii) = beta2;
-            beta(ii+1) = beta1;
-        }
+        beta_diff = beta(ii+1)-beta(ii);
+        swapStates(instances1,energies1,beta_diff,ii);
+        swapStates(instances2,energies2,beta_diff,ii);
     }
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -374,63 +379,14 @@ void pt::ParallelTempering::perform_swap(){
  *  \return A vector of energies.
  */
 
-arma::vec pt::ParallelTempering::get_energies() const{
+arma::vec pt::ParallelTempering::get_energies(pt::instance_number ii) const{
     arma::vec energies(num_of_instances);
-    for(arma::uword ii=0;ii<num_of_instances;ii++)
-        energies(ii) = ham.get_energy(*instances[ii]);
+    if(ii==INSTANCES_1)
+        for(arma::uword ii=0;ii<num_of_instances;ii++)
+            energies(ii) = ham.get_energy(*instances1[ii]);
+    else
+        for(arma::uword ii=0;ii<num_of_instances;ii++)
+            energies(ii) = ham.get_energy(*instances2[ii]);
 
     return energies;
 }
-///////////////////////////////////////////////////////////////////////////////////////////////
-/**
- *  \brief Write the states to a file
- *
- *  Once the parallel tempering is completed, we have a sequence of states for each
- *  instance. We write these to a compressed data file in binary since the number of states can
- *  be quite large.
- *
- *  \param file_name is a string which is the name of file to which the states will be written.
- *
- */
-
-void pt::ParallelTempering::write_to_file_states(std::string file_name){
-    namespace io=boost::iostreams;
-
-    if(!flag_save)
-        return;
-
-    std::ofstream file_obj(file_name,std::ios::binary);
-    io::filtering_ostream filter;
-    filter.push(io::zlib_compressor(6));
-    filter.push(file_obj);
-
-    const defaultBlock* data_memptr = states.memptr();
-    filter.write(reinterpret_cast<const char*>(data_memptr),
-                 states.n_elem*sizeof(defaultBlock));
-}
-///////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
- *  \brief Write the energies to a file
- *
- *  Once the parallel tempering is completed, we have a sequence of energies for each
- *  instance. We write these to a compressed data file in binary since the number of energies can
- *  be quite large.
- *
- *  \param file_name is a string which is the name of file to which the energies will be written.
- *
- */
-
-void pt::ParallelTempering::write_to_file_energies(std::string file_name){
-    namespace io=boost::iostreams;
-
-    std::ofstream file_obj(file_name,std::ios::binary);
-    io::filtering_ostream filter;
-    filter.push(io::zlib_compressor(6));
-    filter.push(file_obj);
-
-    const double* data_memptr = energies.memptr();
-    filter.write(reinterpret_cast<const char*>(data_memptr),
-                 energies.n_elem*sizeof(defaultBlock));
-}
-///////////////////////////////////////////////////////////////////////////////////////////////

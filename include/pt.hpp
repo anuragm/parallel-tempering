@@ -20,8 +20,8 @@
 
 namespace pt{
 
-    typedef unsigned long defaultBlock;
-    typedef boost::dynamic_bitset<defaultBlock> boost_bitset;
+    using defaultBlock = unsigned long ;
+    using boost_bitset = boost::dynamic_bitset<defaultBlock>;
     //Global variables
     const double DW_TEMPERATURE=0.10991;
     const double DW_BETA = 1/DW_TEMPERATURE;
@@ -78,6 +78,8 @@ namespace pt{
 
     }; //end class Hamiltonian
 
+    enum instance_number {INSTANCES_1, INSTANCES_2};
+    
     class ParallelTempering{
     private:
         arma::uword num_of_instances;
@@ -90,12 +92,12 @@ namespace pt{
         arma::uword anneal_counter;
         std::uniform_int_distribution<int> rand_qubit;
 
-        bool flag_save;
         bool flag_init;
 
-        std::vector<std::unique_ptr<boost_bitset>> instances;
-        arma::Cube<defaultBlock> states;
-        arma::Mat<double> energies;
+        std::vector<std::unique_ptr<boost_bitset>> instances1;
+        std::vector<std::unique_ptr<boost_bitset>> instances2;
+        arma::vec energies1;
+        arma::vec energies2;
 
         void init();
 
@@ -106,14 +108,6 @@ namespace pt{
 
         void set_num_of_SA_anneal(arma::uword num_anneal) {
             num_of_SA_anneal = num_anneal;
-        }
-
-        void set_save_flag(bool flag){
-            flag_save = flag;
-        }
-
-        bool get_save_flag(){
-            return flag_save;
         }
 
         arma::uword get_num_of_SA_anneal() const {
@@ -128,15 +122,16 @@ namespace pt{
             return num_of_swaps;
         }
 
+        arma::vec get_beta() const {return beta;}
+
         void perform_anneal(){
             perform_anneal(num_of_SA_anneal);
         }
+
         void perform_anneal(arma::uword anneal_steps);
         void perform_swap();
         void run();
-        void write_to_file_states(std::string file_name);
-        void write_to_file_energies(std::string file_name);
-        arma::vec get_energies() const;
+        arma::vec get_energies(instance_number) const;
     };//end class Parallel tempering;
 } //end namespace pt.
 
