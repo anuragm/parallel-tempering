@@ -21,7 +21,7 @@ debug: CC_FLAGS += -g
 debug: LD_FLAGS += -g
 debug: pt
 
-pt : lib/main.o lib/pt.o
+pt : lib/main.o lib/pt.o lib/pthelper.o lib/ptdefs.o
 	g++ -o $@ $^ $(LD_FLAGS)
 
 lib/%.o : src/%.cpp $(HPP_FILES)

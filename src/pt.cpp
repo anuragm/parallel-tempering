@@ -12,24 +12,14 @@
 #include <cmath>
 #include <memory>
 #include <climits>
-#include <boost/iostreams/device/file.hpp> //include to read-write files.
-#include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
 
-//Redefine global constants.
+//Initialise global random number generators.
 namespace pt{
     std::mt19937 rand_eng(time_seed);
     std::uniform_real_distribution<double> uniform_dist =
         std::uniform_real_distribution<double>(0.0,1.0);
 }
-///////////////////////////////////////////////////////////////////////////////////////////////
 
-std::vector<pt::defaultBlock> pt::boost_bitset_to_vector(const pt::boost_bitset& state){
-    std::vector<pt::defaultBlock> conv_vector
-        (state.size()/sizeof(pt::defaultBlock)/CHAR_BIT);
-    boost::to_block_range(state, conv_vector.begin());
-    return conv_vector;
-}
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /**
  *  \brief Creates a random bitset
@@ -292,6 +282,10 @@ void pt::ParallelTempering::init(){
     }
     beta = arma::exp(log_beta);
 
+    //Compute the helper quantities for initial vectors.
+    for (auto& ii: helper_objects)
+        ii->compute(instances1,instances2,energies1,energies2);
+
     //And now set the init flag to true.
     flag_init = true;
 }
@@ -332,12 +326,13 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
         for(arma::uword ii_instance=0;ii_instance<num_of_instances;ii_instance++){
             //Anneal both copies.
             anneal_state(instances1[ii_instance],energies1(ii_instance),ii_instance);
-            anneal_state(instances2[ii_instance],energies1(ii_instance),ii_instance);
+            anneal_state(instances2[ii_instance],energies2(ii_instance),ii_instance);
         }
         anneal_counter++;
-        //TODO: Add procedure to write new states and energies to disk
-        //TODO: Add procedure to apply random functionals to the two states.
-        //TODO: Write sample functionals to compute overlap and save energies.
+
+        //Compute the helper quantities for annealed vectors.
+        for (auto& ii: helper_objects)
+            ii->compute(instances1,instances2,energies1,energies2);
     }
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////

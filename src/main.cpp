@@ -11,6 +11,7 @@
 #include <armadillo>
 #include <climits>
 #include "pt.hpp"
+#include "pthelper.hpp"
 #include "ptparse.hpp"
 
 int main(int argc, char** argv){
@@ -44,6 +45,9 @@ int main(int argc, char** argv){
     temp_pt.set_num_of_SA_anneal(num_sa_anneals);
     temp_pt.set_num_of_swaps(num_pt_swaps);
 
+    pt::PTSave save_pt;
+    temp_pt.push(&save_pt);
+
     std::cout << "Now performing parallel tempering\n";
     arma::wall_clock timer;
 
@@ -61,6 +65,10 @@ int main(int argc, char** argv){
               <<" for beta "<<temp_pt.get_beta().at(min_energy_loc)<<std::endl;
     std::cout<< "SA anneal time was "<<anneal_time<<" and swap time was "<<swap_time
              <<" seconds \n";
+
+    //Write the saved energies and state to disk.
+    timer.tic(); save_pt.flush_to_files("test");
+    std::cout << "It took "<<timer.toc()<<" seconds to write the saved data. \n";
 
     return 0;
 }

@@ -8,8 +8,8 @@
  *
  */
 
-#ifndef BITSTRING_HPP
-#define BITSTRING_HPP 1
+#ifndef PT_HPP
+#define PT_HPP 1
 
 #include <armadillo>
 #include <random>
@@ -17,21 +17,10 @@
 #include <cmath>
 #include <memory>
 #include <boost/dynamic_bitset.hpp>
+#include "ptdefs.hpp"
+#include "pthelper.hpp"
 
 namespace pt{
-
-    using defaultBlock = unsigned long ;
-    using boost_bitset = boost::dynamic_bitset<defaultBlock>;
-    //Global variables
-    const double DW_TEMPERATURE=0.10991;
-    const double DW_BETA = 1/DW_TEMPERATURE;
-    const arma::uword DW_NUM_OF_QUBIT=512;
-
-    const auto time_seed = std::chrono::system_clock::now().time_since_epoch().count();
-    extern std::mt19937 rand_eng;
-    extern std::uniform_real_distribution<double> uniform_dist;
-
-    std::vector<defaultBlock> boost_bitset_to_vector(const boost_bitset&);
 
     class Hamiltonian{
     private:
@@ -79,7 +68,7 @@ namespace pt{
     }; //end class Hamiltonian
 
     enum instance_number {INSTANCES_1, INSTANCES_2};
-    
+
     class ParallelTempering{
     private:
         arma::uword num_of_instances;
@@ -99,6 +88,7 @@ namespace pt{
         arma::vec energies1;
         arma::vec energies2;
 
+        std::vector<PTHelper*> helper_objects;
         void init();
 
     public:
@@ -128,11 +118,19 @@ namespace pt{
             perform_anneal(num_of_SA_anneal);
         }
 
+        void push(PTHelper* pt_help_obj){
+            helper_objects.push_back(pt_help_obj);
+        }
+
         void perform_anneal(arma::uword anneal_steps);
         void perform_swap();
         void run();
         arma::vec get_energies(instance_number) const;
     };//end class Parallel tempering;
 } //end namespace pt.
+
+//Helper file needs to be included at end so as to ensure that the included file can see all
+//the definitions of this file hidden by header guard while recursive includes. This can be
+//solved by having a skeleton include meta-file, the way boost does it.
 
 #endif //bitstring.hpp
