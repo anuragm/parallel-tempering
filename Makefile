@@ -1,19 +1,22 @@
+CC := clang++
 SRCDIR := src
 OBJDIR := lib
 INCDIR := include
-IFLAGS := -I$(INCDIR)/
+IFLAGS := -I$(INCDIR)/ -I/usr/local/include/root
 
 CPP_FILES := $(wildcard $(SRCDIR)/*.cpp)
 HPP_FILES := $(INCDIR)/*.hpp
 
-LD_FLAGS := -lboost_iostreams -lz -flto
+#Attach required libraries for root.
+ROOT_LIBS := $(shell root-config --glibs)
+LD_FLAGS := $(ROOT_LIBS) -lboost_iostreams -lz -flto
 
 ifeq (macos,macos)
 LD_FLAGS := -framework Accelerate $(LD_FLAGS)
 endif
 
 #O3 flag uses string aliasing for code. We want a warning if that happens.
-CC_FLAGS :=-std=c++14 -Wall -pedantic -O3 -march=native -Wstrict-aliasing -flto
+CC_FLAGS :=-std=c++14 -Wall -pedantic -O3 -march=native -Wstrict-aliasing -flto -pthread
 
 all: pt doc
 
@@ -22,10 +25,10 @@ debug: LD_FLAGS += -g
 debug: pt
 
 pt : lib/main.o lib/pt.o lib/pthelper.o lib/ptdefs.o
-	g++ -o $@ $^ $(LD_FLAGS)
+	$(CC) -o $@ $^ $(LD_FLAGS)
 
 lib/%.o : src/%.cpp $(HPP_FILES)
-	g++ $(CC_FLAGS) $(IFLAGS) -c -o $@ $<
+	$(CC) $(CC_FLAGS) $(IFLAGS) -c -o $@ $<
 
 doc: .Doxyfile $(CPP_FILES) $(HPP_FILES)
 	doxygen $^
@@ -37,7 +40,7 @@ clean:
 	rm -f pt && rm -f pt_test && rm -f $(OBJDIR)/*.o
 
 test: lib/pt.o lib/test.o
-	g++ $(LD_FLAGS) -o pt_test lib/test.o lib/pt.o
+	$(CC) $(LD_FLAGS) -o pt_test lib/test.o lib/pt.o
 
 #for debug reasons.
 print-%  : ; @echo $* = $($*)

@@ -14,6 +14,7 @@
 #include <boost/iostreams/device/file.hpp> //include to read-write files.
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
+#include <armadillo>
 
 namespace pt{
     class PTHelper{
@@ -40,5 +41,23 @@ namespace pt{
         void flush_to_files(std::string);
     };
 
+    class PTSpinOverlap: public PTHelper{
+    private:
+        arma::Mat<unsigned int> spin_overlap_array;
+        boost::iostreams::filtering_ostream compress_overlap;
+        arma::uword num_of_instances, num_of_anneals, num_of_swaps;
+
+        arma::uword anneal_counter;
+
+        unsigned compression_level=6;
+    public:
+        PTSpinOverlap() = delete;
+        PTSpinOverlap(arma::uword,arma::uword,arma::uword);
+        void compute(const std::vector<std::unique_ptr<pt::boost_bitset>>&,
+                     const std::vector<std::unique_ptr<pt::boost_bitset>>&,
+                     const arma::vec&, const arma::vec&);
+        void flush_to_files(std::string);
+        void plot_to_file_overlap_mean(std::string);
+    };
 }
 #endif

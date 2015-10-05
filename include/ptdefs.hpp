@@ -25,6 +25,18 @@ namespace pt{
     extern std::uniform_real_distribution<double> uniform_dist;
 
     std::vector<defaultBlock> boost_bitset_to_vector(const boost_bitset&);
+
+    //Function to count number of 1's in bits of unsigned integers of length up-to 128 bits.
+    //Code taken from http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+    template<typename T>
+    unsigned int num_of_1bits_fast(T v){
+        unsigned int c;
+        v = v - ((v >> 1) & (T)~(T)0/3);                           // temp
+        v = (v & (T)~(T)0/15*3) + ((v >> 2) & (T)~(T)0/15*3);      // temp
+        v = (v + (v >> 4)) & (T)~(T)0/255*15;                      // temp
+        c = (T)(v * ((T)~(T)0/255)) >> (sizeof(T) - 1) * CHAR_BIT; // count
+        return c;
+    }
 }
 
 #endif

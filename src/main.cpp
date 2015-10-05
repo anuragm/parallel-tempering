@@ -45,8 +45,9 @@ int main(int argc, char** argv){
     temp_pt.set_num_of_SA_anneal(num_sa_anneals);
     temp_pt.set_num_of_swaps(num_pt_swaps);
 
-    pt::PTSave save_pt;
-    temp_pt.push(&save_pt);
+    pt::PTSave save_pt; pt::PTSpinOverlap q_pt(64,num_sa_anneals,num_pt_swaps);
+    //temp_pt.push(&save_pt);
+    temp_pt.push(&q_pt);
 
     std::cout << "Now performing parallel tempering\n";
     arma::wall_clock timer;
@@ -67,8 +68,10 @@ int main(int argc, char** argv){
              <<" seconds \n";
 
     //Write the saved energies and state to disk.
-    timer.tic(); save_pt.flush_to_files("test");
+    timer.tic(); //save_pt.flush_to_files("test");
+    //q_pt.flush_to_files("test.overlap");
     std::cout << "It took "<<timer.toc()<<" seconds to write the saved data. \n";
 
+    q_pt.plot_to_file_overlap_mean("test.pdf");
     return 0;
 }
