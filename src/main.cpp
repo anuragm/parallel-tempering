@@ -45,15 +45,14 @@ int main(int argc, char** argv){
     temp_pt.set_num_of_SA_anneal(num_sa_anneals);
     temp_pt.set_num_of_swaps(num_pt_swaps);
 
-    pt::PTSave save_pt; pt::PTSpinOverlap q_pt(64,num_sa_anneals,num_pt_swaps);
-    //temp_pt.push(&save_pt);
-    temp_pt.push(&q_pt);
+    pt::PTTestThermalise pt_thermal_test(num_of_qubit,0);
+    temp_pt.push(&pt_thermal_test);
 
     std::cout << "Now performing parallel tempering\n";
     arma::wall_clock timer;
 
     double swap_time=0, anneal_time=0;
-    for(arma::uword ii=0;ii<num_pt_swaps;ii++){
+    while(!pt_thermal_test.has_thermalised()){
         timer.tic(); temp_pt.perform_anneal(); anneal_time += timer.toc();
         timer.tic(); temp_pt.perform_swap();   swap_time += timer.toc();
     }
@@ -67,11 +66,5 @@ int main(int argc, char** argv){
     std::cout<< "SA anneal time was "<<anneal_time<<" and swap time was "<<swap_time
              <<" seconds \n";
 
-    //Write the saved energies and state to disk.
-    timer.tic(); //save_pt.flush_to_files("test");
-    //q_pt.flush_to_files("test.overlap");
-    std::cout << "It took "<<timer.toc()<<" seconds to write the saved data. \n";
-
-    q_pt.plot_to_file_overlap_mean("test.pdf");
     return 0;
 }

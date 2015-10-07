@@ -2,21 +2,21 @@ CC := clang++
 SRCDIR := src
 OBJDIR := lib
 INCDIR := include
-IFLAGS := -I$(INCDIR)/ -I/usr/local/include/root
+IFLAGS := -I$(INCDIR)/ -I/usr/local/include/root -isystem /usr/local/include
 
 CPP_FILES := $(wildcard $(SRCDIR)/*.cpp)
 HPP_FILES := $(INCDIR)/*.hpp
 
 #Attach required libraries for root.
 ROOT_LIBS := $(shell root-config --glibs)
-LD_FLAGS := $(ROOT_LIBS) -lboost_iostreams -lz -flto
+LD_FLAGS := $(ROOT_LIBS) -L/usr/local/lib -lboost_iostreams -lz -flto
 
 ifeq (macos,macos)
 LD_FLAGS := -framework Accelerate $(LD_FLAGS)
 endif
 
 #O3 flag uses string aliasing for code. We want a warning if that happens.
-CC_FLAGS :=-std=c++14 -Wall -pedantic -O3 -march=native -Wstrict-aliasing -flto -pthread
+CC_FLAGS :=-std=c++14 -Wall -pedantic -O3 -march=native -Wstrict-aliasing -flto
 
 all: pt doc
 

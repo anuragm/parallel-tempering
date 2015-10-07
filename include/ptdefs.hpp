@@ -37,6 +37,9 @@ namespace pt{
         c = (T)(v * ((T)~(T)0/255)) >> (sizeof(T) - 1) * CHAR_BIT; // count
         return c;
     }
+
+    double fourth_order_derivative(arma::Col<double> values);
+
 }
 
 #endif
