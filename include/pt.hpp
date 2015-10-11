@@ -122,6 +122,15 @@ namespace pt{
             helper_objects.push_back(pt_help_obj);
         }
 
+        bool pop(){
+            if(!helper_objects.empty()){
+                helper_objects.pop_back();
+                return true;
+            }
+            else
+                return false;
+        }
+
         void perform_anneal(arma::uword anneal_steps);
         void perform_swap();
         void run();

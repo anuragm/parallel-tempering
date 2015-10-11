@@ -64,11 +64,11 @@ namespace pt{
 
     class PTTestThermalise : public PTHelper{
     private:
-        bool flag_thermalised;
+        std::vector<bool> flag_thermalised;
         arma::uword anneal_counter;
         arma::uword num_of_qubits;
-        arma::uword instance_number;
-        boost::circular_buffer<double> mean_overlap_buffer;
+        arma::uword num_of_instances;
+        std::vector<pt::FixedQueue<double>> mean_overlap_buffer;
         double tolerance;
     public:
         PTTestThermalise() = delete;
@@ -79,5 +79,35 @@ namespace pt{
         bool has_thermalised();
     };
 
-}
+    class PTAutocorrelation : public PTHelper{
+    private:
+        arma::uword total_anneals;
+        arma::uword anneal_counter;
+        arma::uword num_of_instance;
+        arma::mat energies1;
+    public:
+        void compute(const std::vector<std::unique_ptr<pt::boost_bitset>>&,
+                     const std::vector<std::unique_ptr<pt::boost_bitset>>&,
+                     const arma::vec&, const arma::vec&);
+        arma::uword get_correlation_length();
+        PTAutocorrelation(arma::uword,arma::uword);
+        PTAutocorrelation() = delete;
+    };
+
+    class PTStore : public PTHelper{
+    private:
+        arma::uword correlation_length;
+        arma::uword total_anneals;
+        arma::uword num_of_instances;
+        arma::uword anneal_counter;
+        arma::uword num_of_qubits;
+        arma::mat energies;
+    public:
+        PTStore(arma::uword,arma::uword,arma::uword,arma::uword);
+        void compute(const std::vector<std::unique_ptr<pt::boost_bitset>>&,
+                     const std::vector<std::unique_ptr<pt::boost_bitset>>&,
+                     const arma::vec&, const arma::vec&);
+        arma::mat get_energies() const;
+    };
+} //end of namespace pt.
 #endif

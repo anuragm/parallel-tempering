@@ -12,6 +12,7 @@
 #include <cmath>
 #include <memory>
 #include <climits>
+#include <cassert>
 
 //Initialise global random number generators.
 namespace pt{
@@ -32,11 +33,22 @@ namespace pt{
  */
 
 void make_random_bitset(pt::boost_bitset& bitset){
+    using sizetype = std::string::size_type;
     auto num_of_bits = bitset.size();
-    std::vector<pt::defaultBlock> temp_vec(num_of_bits/CHAR_BIT/sizeof(pt::defaultBlock));
-    auto dice = std::bind(std::uniform_int_distribution<pt::defaultBlock>(),pt::rand_eng);
-    std::generate_n(temp_vec.begin(),temp_vec.size(),dice);
-    boost::from_block_range(temp_vec.begin(), temp_vec.end(), bitset);
+    auto cointoss = std::bind(std::bernoulli_distribution(0.5),pt::rand_eng);
+    for(sizetype ii=0;ii<num_of_bits;ii++)
+        bitset[ii] = cointoss();
+
+//    unsigned vector_size = num_of_bits/CHAR_BIT/sizeof(pt::defaultBlock);
+//    if(vector_size==0) //This check ensures that even small qubit sizes get properly initialised.
+//        vector_size=1;
+//
+//    std::vector<pt::defaultBlock> temp_vec(vector_size);
+//    auto dice = std::bind(std::uniform_int_distribution<pt::defaultBlock>(),pt::rand_eng);
+//    std::generate_n(temp_vec.begin(),temp_vec.size(),dice);
+//
+//    //This will cause problem if numofqubits is less than bits in defaultBlock.
+//    boost::from_block_range(temp_vec.begin(), temp_vec.end(), bitset);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /**
@@ -196,7 +208,7 @@ void pt::Hamiltonian::pre_compute(){
 double pt::Hamiltonian::energy_diff
 (boost_bitset a, const boost_bitset& b){
     typedef std::string::size_type size_type;
-    auto diff_bitset(a ^ b); //Bitwise XOR
+    pt::boost_bitset diff_bitset = (a ^ b); //Bitwise XOR
     double energy_diff = 0;
     //Add flip difference as we move from 'a', the final state, to 'b', the initial state.
     for(size_type ii=0;ii<diff_bitset.size();ii++){
@@ -205,6 +217,7 @@ double pt::Hamiltonian::energy_diff
             a.flip(ii);
         }
     }
+    //a.reset(); //Workaround needed for boost to not complain.
     return energy_diff;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -244,10 +257,14 @@ pt::ParallelTempering::ParallelTempering
 
 pt::ParallelTempering::~ParallelTempering(){
     //Release all the unique pointers.
-    for(auto &ii: instances1)
+    for(auto &ii: instances1){
         ii.reset();
-    for(auto &ii: instances2)
+    }
+
+    for(auto &ii: instances2){
         ii.reset();
+    }
+
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -256,6 +273,7 @@ void pt::ParallelTempering::init(){
     //create instances and proper space, and then initialise them to random bit strings.
     instances1 = std::vector<std::unique_ptr<boost_bitset>>(num_of_instances);
     instances2 = std::vector<std::unique_ptr<boost_bitset>>(num_of_instances);
+
     for (auto& ii: instances1){
         ii  = std::make_unique<boost_bitset>(ham.size());
         make_random_bitset(*ii);
@@ -310,8 +328,8 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
     //Lambda to perform anneal on a state.
     auto anneal_state = [&] (std::unique_ptr<boost_bitset>& state, double& state_energy,
                                              arma::uword ii){
-            int qubit_to_flip = rand_qubit(rand_eng);
-            double energy_diff = ham.flip_energy_diff(qubit_to_flip,*state);
+            int qubit_to_flip   = rand_qubit(rand_eng);
+            double energy_diff  = ham.flip_energy_diff(qubit_to_flip,*state);
             double prob_to_flip = std::exp(-beta(ii)*energy_diff);
             if (prob_to_flip > uniform_dist(rand_eng)){
                 state->flip(qubit_to_flip);
@@ -321,8 +339,6 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
 
     //For all instances, to anneal_steps number of SA steps.
     for(arma::uword ii_anneal=0;ii_anneal<anneal_steps;ii_anneal++){
-        //      if(flag_save_energies)
-        //   current_energies = energies.col(anneal_counter);
         for(arma::uword ii_instance=0;ii_instance<num_of_instances;ii_instance++){
             //Anneal both copies.
             anneal_state(instances1[ii_instance],energies1(ii_instance),ii_instance);
@@ -348,12 +364,13 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
  */
 
 void pt::ParallelTempering::perform_swap(){
-    double beta_diff;
+
     auto rand_num = std::bind(uniform_dist,rand_eng);
     auto swapStates = [&] (std::vector<std::unique_ptr<boost_bitset>>& ins,
-                           arma::vec& energies, double b_diff, arma::uword ins_number){
+                           arma::vec& energies, arma::uword ins_number){
+        double beta_diff = beta(ins_number+1) - beta(ins_number);
         double energy_diff = ham.energy_diff(*ins[ins_number+1],*ins[ins_number]);
-        double swap_prob = std::exp(-b_diff*energy_diff);
+        double swap_prob = std::exp(beta_diff*energy_diff);
         bool should_swap = (rand_num()<swap_prob);
         if(should_swap){ //Swap instances ii and ii+1 in instances.
             std::swap(ins[ins_number+1],ins[ins_number]); //Cheap, because only pointers change.
@@ -362,9 +379,8 @@ void pt::ParallelTempering::perform_swap(){
     };
 
     for(arma::uword ii=0; ii<(num_of_instances-1);ii++){
-        beta_diff = beta(ii+1)-beta(ii);
-        swapStates(instances1,energies1,beta_diff,ii);
-        swapStates(instances2,energies2,beta_diff,ii);
+        swapStates(instances1,energies1,ii);
+        swapStates(instances2,energies2,ii);
     }
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,17 +1,16 @@
-CC := clang++
 SRCDIR := src
 OBJDIR := lib
 INCDIR := include
-IFLAGS := -I$(INCDIR)/ -I/usr/local/include/root -isystem /usr/local/include
 
+
+IFLAGS := -I$(INCDIR)/ -isystem /usr/local/include/root -isystem /usr/local/include
 CPP_FILES := $(wildcard $(SRCDIR)/*.cpp)
 HPP_FILES := $(INCDIR)/*.hpp
 
-#Attach required libraries for root.
-ROOT_LIBS := $(shell root-config --glibs)
-LD_FLAGS := $(ROOT_LIBS) -L/usr/local/lib -lboost_iostreams -lz -flto
+#Attach required libraries.
+LD_FLAGS := -L/usr/local/lib -lboost_iostreams -lz -lboost_system -lboost_filesystem -flto
 
-ifeq (macos,macos)
+ifeq ($(OS),macos)
 LD_FLAGS := -framework Accelerate $(LD_FLAGS)
 endif
 
@@ -25,10 +24,10 @@ debug: LD_FLAGS += -g
 debug: pt
 
 pt : lib/main.o lib/pt.o lib/pthelper.o lib/ptdefs.o
-	$(CC) -o $@ $^ $(LD_FLAGS)
+	$(CXX) -o $@ $^ $(LD_FLAGS)
 
 lib/%.o : src/%.cpp $(HPP_FILES)
-	$(CC) $(CC_FLAGS) $(IFLAGS) -c -o $@ $<
+	$(CXX) $(CC_FLAGS) $(IFLAGS) -c -o $@ $<
 
 doc: .Doxyfile $(CPP_FILES) $(HPP_FILES)
 	doxygen $^
@@ -40,7 +39,7 @@ clean:
 	rm -f pt && rm -f pt_test && rm -f $(OBJDIR)/*.o
 
 test: lib/pt.o lib/test.o
-	$(CC) $(LD_FLAGS) -o pt_test lib/test.o lib/pt.o
+	$(CXX) $(LD_FLAGS) -o pt_test lib/test.o lib/pt.o
 
 #for debug reasons.
 print-%  : ; @echo $* = $($*)
