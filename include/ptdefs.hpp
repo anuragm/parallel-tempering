@@ -17,11 +17,10 @@ namespace pt{
     using defaultBlock = unsigned long ;
     using boost_bitset = boost::dynamic_bitset<defaultBlock>;
     //Global variables
-    const double DW_TEMPERATURE=0.10991;
-    const double DW_BETA = 1/DW_TEMPERATURE;
-    const arma::uword DW_NUM_OF_QUBIT=512;
+    constexpr double DW_TEMPERATURE=0.10991;
+    constexpr double DW_BETA = 1/DW_TEMPERATURE;
+    constexpr arma::uword DW_NUM_OF_QUBIT=512;
 
-    const auto time_seed = std::chrono::system_clock::now().time_since_epoch().count();
     extern std::mt19937 rand_eng;
     extern std::uniform_real_distribution<double> uniform_dist;
 
@@ -86,6 +85,19 @@ namespace pt{
             std::copy(internal_array,internal_array+array_size,temp_vector.begin());
             return temp_vector;
         }
+    };
+
+    class OverlapHistogram{
+    private:
+        unsigned int num_of_bins;
+        unsigned offset;
+        std::vector<unsigned int> count;
+    public:
+        OverlapHistogram(unsigned int);
+        OverlapHistogram() = delete;
+        bool is_symmetric(double tolerance=1e-8) const;
+        void push_value(double);
+        arma::mat get_histogram() const;
     };
 }
 

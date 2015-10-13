@@ -79,6 +79,7 @@ namespace pt{
         double base_beta;
         double final_beta;
         arma::uword anneal_counter;
+        arma::uword swap_counter;
         std::uniform_int_distribution<int> rand_qubit;
 
         bool flag_init;
@@ -87,6 +88,12 @@ namespace pt{
         std::vector<std::unique_ptr<boost_bitset>> instances2;
         arma::vec energies1;
         arma::vec energies2;
+
+        std::vector<pt::OverlapHistogram> prob_overlap;
+        double average_acceptance_ratio;
+        //We shall only tag and keep track of instances in instance1.
+        std::vector<unsigned int> current_tags;
+        arma::umat tag_frequency;
 
         std::vector<PTHelper*> helper_objects;
         void init();
@@ -112,6 +119,11 @@ namespace pt{
             return num_of_swaps;
         }
 
+        void set_beta_range(double in_base_beta,double in_final_beta){
+            base_beta = in_base_beta;
+            final_beta = in_final_beta;
+        }
+        
         arma::vec get_beta() const {return beta;}
 
         void perform_anneal(){
@@ -131,10 +143,18 @@ namespace pt{
                 return false;
         }
 
+        arma::uword get_num_of_instances(){
+            return num_of_instances;
+        }
+
         void perform_anneal(arma::uword anneal_steps);
         void perform_swap();
         void run();
         arma::vec get_energies(instance_number) const;
+        void status() const;
+
+        void reset_status();
+
     };//end class Parallel tempering;
 } //end namespace pt.
 

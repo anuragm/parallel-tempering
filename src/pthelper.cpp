@@ -122,7 +122,7 @@ void pt::PTSpinOverlap::compute(const std::vector<std::unique_ptr<boost_bitset>>
             instance_overlap += num_of_1bits_fast(ii);
 
         spin_overlap_array(ii_instance,anneal_counter) =
-            double(instance_overlap)/num_of_qubits;
+            2.0*double(instance_overlap)-num_of_qubits;
 
         if (anneal_counter==0)
             spin_overlap_mean(ii_instance,0) = double(instance_overlap)/num_of_qubits;
@@ -218,7 +218,7 @@ void pt::PTTestThermalise::compute(const std::vector<std::unique_ptr<pt::boost_b
         double instance_overlap=0;
         for (auto& ii:block_vector)
             instance_overlap += num_of_1bits_fast(ii);
-        instance_overlap/=num_of_qubits;
+        instance_overlap = 2*instance_overlap/num_of_qubits - 1;
 
         double current_mean_value =
             (anneal_counter*last_mean_value[ii_instance] + instance_overlap)/(anneal_counter+1);

@@ -13,13 +13,7 @@
 #include <memory>
 #include <climits>
 #include <cassert>
-
-//Initialise global random number generators.
-namespace pt{
-    std::mt19937 rand_eng(time_seed);
-    std::uniform_real_distribution<double> uniform_dist =
-        std::uniform_real_distribution<double>(0.0,1.0);
-}
+#include <gnuplot-iostream.h>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /**
@@ -38,17 +32,6 @@ void make_random_bitset(pt::boost_bitset& bitset){
     auto cointoss = std::bind(std::bernoulli_distribution(0.5),pt::rand_eng);
     for(sizetype ii=0;ii<num_of_bits;ii++)
         bitset[ii] = cointoss();
-
-//    unsigned vector_size = num_of_bits/CHAR_BIT/sizeof(pt::defaultBlock);
-//    if(vector_size==0) //This check ensures that even small qubit sizes get properly initialised.
-//        vector_size=1;
-//
-//    std::vector<pt::defaultBlock> temp_vec(vector_size);
-//    auto dice = std::bind(std::uniform_int_distribution<pt::defaultBlock>(),pt::rand_eng);
-//    std::generate_n(temp_vec.begin(),temp_vec.size(),dice);
-//
-//    //This will cause problem if numofqubits is less than bits in defaultBlock.
-//    boost::from_block_range(temp_vec.begin(), temp_vec.end(), bitset);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /**
@@ -238,16 +221,25 @@ void pt::Hamiltonian::scale_to_unit(){
 
 pt::ParallelTempering::ParallelTempering
 (const pt::Hamiltonian& in_ham,arma::uword in_num_of_instances):
-    num_of_instances(in_num_of_instances),ham(in_ham){
+    num_of_instances(in_num_of_instances),ham(in_ham),
+    current_tags(num_of_instances){
 
     //Set up various default values.
     beta               = arma::vec(num_of_instances,arma::fill::zeros);
     base_beta          = DW_BETA;
-    final_beta         = DW_BETA/10;
+    final_beta         = DW_BETA/5;
     num_of_SA_anneal   = 10;
     num_of_swaps       = 100;
     anneal_counter     = 0;
+    swap_counter       = 0;
     flag_init          = false;
+    tag_frequency.set_size(num_of_instances,num_of_instances);
+    tag_frequency.zeros();
+
+    //Use accuracy of 0.01 for binning overlap probabilities.
+    prob_overlap.reserve(num_of_instances);
+    for(arma::uword ii=0;ii<num_of_instances;ii++)
+        prob_overlap.push_back(OverlapHistogram(200));
 
     //Memory to be initialised just before first anneal is performed. This is done by calling
     //init function.
@@ -291,18 +283,24 @@ void pt::ParallelTempering::init(){
     rand_qubit = std::uniform_int_distribution<int>(0,ham.size()-1);
 
     //If no temperature was allocated, set it in geometric progression.
-    arma::vec log_beta(num_of_instances);
+    arma::vec log_beta(beta.n_elem);
     if( !arma::any(beta)){
-        double log_beta_ratio = std::log(final_beta/base_beta)/double(num_of_instances-1);
+        double logbeta_ratio = std::log(final_beta/base_beta)/(num_of_instances-1);
         for(arma::uword ii=0;ii<(num_of_instances);ii++){
-            log_beta(ii) = ii*log_beta_ratio + std::log(base_beta);
+            log_beta(ii) = ii*logbeta_ratio + std::log(base_beta);
         }
     }
     beta = arma::exp(log_beta);
-
+    
     //Compute the helper quantities for initial vectors.
     for (auto& ii: helper_objects)
         ii->compute(instances1,instances2,energies1,energies2);
+
+    //Set the initial tag array. Each tag is swapped as instances are swapped.
+    for(unsigned long ii=0;ii<current_tags.size();ii++){
+        current_tags[ii] = ii;
+        tag_frequency(ii,ii) = 1; //Before 1st run, instance 'ii' is set to value beta(ii)
+    }
 
     //And now set the init flag to true.
     flag_init = true;
@@ -324,6 +322,7 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
     if(!flag_init){
         init();
     }
+    arma::uword num_of_qubits = ham.size();
 
     //Lambda to perform anneal on a state.
     auto anneal_state = [&] (std::unique_ptr<boost_bitset>& state, double& state_energy,
@@ -343,7 +342,18 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
             //Anneal both copies.
             anneal_state(instances1[ii_instance],energies1(ii_instance),ii_instance);
             anneal_state(instances2[ii_instance],energies2(ii_instance),ii_instance);
+
+            //Compute overlap for each beta and save it.
+            boost_bitset overlap_bitset =
+                ~((*instances1[ii_instance])^(*instances2[ii_instance]));
+            auto block_vector = boost_bitset_to_vector(overlap_bitset);
+            double overlap=0;
+            for (auto& ii:block_vector)
+                overlap += num_of_1bits_fast(ii);
+            overlap = 2.0*overlap/num_of_qubits - 1;
+            prob_overlap[ii_instance].push_value(overlap);
         }
+
         anneal_counter++;
 
         //Compute the helper quantities for annealed vectors.
@@ -365,23 +375,47 @@ void pt::ParallelTempering::perform_anneal(arma::uword anneal_steps){
 
 void pt::ParallelTempering::perform_swap(){
 
-    auto rand_num = std::bind(uniform_dist,rand_eng);
+    auto rand_num = [](){return uniform_dist(rand_eng);};
     auto swapStates = [&] (std::vector<std::unique_ptr<boost_bitset>>& ins,
                            arma::vec& energies, arma::uword ins_number){
         double beta_diff = beta(ins_number+1) - beta(ins_number);
         double energy_diff = ham.energy_diff(*ins[ins_number+1],*ins[ins_number]);
-        double swap_prob = std::exp(beta_diff*energy_diff);
-        bool should_swap = (rand_num()<swap_prob);
+        double log_swap_prob = (beta_diff*energy_diff);
+        bool should_swap;
+        if(log_swap_prob>0)
+            should_swap = true;
+        else if(log_swap_prob<0)
+            should_swap = (std::log(rand_num())<log_swap_prob);
+        else
+            should_swap = false;
         if(should_swap){ //Swap instances ii and ii+1 in instances.
             std::swap(ins[ins_number+1],ins[ins_number]); //Cheap, because only pointers change.
             std::swap(energies(ins_number+1),energies(ins_number));
         }
+        return should_swap;
     };
 
+    arma::uword swap_accepted=0;
     for(arma::uword ii=0; ii<(num_of_instances-1);ii++){
-        swapStates(instances1,energies1,ii);
+        bool did_swap;
+        did_swap = swapStates(instances1,energies1,ii);
         swapStates(instances2,energies2,ii);
+        if(did_swap)
+            std::swap(current_tags[ii],current_tags[ii+1]);
+        swap_accepted+=did_swap;
     }
+    double current_acceptance_ratio = double(swap_accepted)/(num_of_instances-1);
+    if(swap_counter==0)
+        average_acceptance_ratio = current_acceptance_ratio;
+    else
+        average_acceptance_ratio =
+            (swap_counter*average_acceptance_ratio+current_acceptance_ratio)/
+            (swap_counter+1);
+    //Now, increment the tag frequencies.
+    for(arma::uword ii=0;ii<num_of_instances;ii++)
+        tag_frequency(ii,current_tags[ii])++;
+
+    swap_counter++;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /**
@@ -400,4 +434,48 @@ arma::vec pt::ParallelTempering::get_energies(pt::instance_number ii) const{
             energies(ii) = ham.get_energy(*instances2[ii]);
 
     return energies;
+}
+
+void pt::ParallelTempering::status() const{
+    //First, we should print out the acceptance ratio.
+    std::cout << "During "<<swap_counter<<" swaps, the average swap acceptance ratio was "
+              <<average_acceptance_ratio<<std::endl;
+
+    //Then, we should report if each P(q) is symmetric.
+    for(arma::uword ii=0;ii<num_of_instances;ii++){
+        std::cout << "Is P(q) for beta("<<ii<<") symmetric : ";
+        std::cout << std::boolalpha<< prob_overlap[ii].is_symmetric(1e-5) <<std::endl;
+    }
+
+    //Plot for P(q) for beta(0)
+    std::cout << "Here is a histogram for lowest temperature of P(q)\n";
+    Gnuplot gp;
+    arma::mat hist = prob_overlap[0].get_histogram();
+    gp<<"set xrange [-1:1]\n";
+    gp<<"plot "<<gp.binFile1d(hist,"record")<<" title 'P(q) for beta(0)' with boxes\n";
+//    std::cout << hist <<"\n";
+
+    //And then, let us tell about the how many time each replica visited each temperature.
+    std::cout << "Replica (row) visited beta (column) these many times.\n";
+    std::cout << "Saved in file tagfreq.txt \n";
+    arma::umat tagfreq = arma::trans(tag_frequency);
+    tagfreq.save("tagfreq.txt",arma::raw_ascii);
+}
+
+void pt::ParallelTempering::reset_status(){
+    //Resets the counters for overlap, replica visit and acceptance ratio.
+    average_acceptance_ratio = 0;
+    swap_counter = 0; //This resets acceptance ratio calculation automatically.
+
+    //Reset overlaps.
+    prob_overlap.clear();
+    for(arma::uword ii=0;ii<num_of_instances;ii++)
+        prob_overlap.emplace_back(200);
+
+    //Reset replica visit array.
+    tag_frequency.zeros();
+    for(unsigned long ii=0;ii<current_tags.size();ii++){
+        current_tags[ii] = ii;
+        tag_frequency(ii,ii) = 1; //Before 1st run, instance 'ii' is set to value beta(ii)
+    }
 }
